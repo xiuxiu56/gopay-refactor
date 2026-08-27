@@ -27,8 +27,9 @@ class FakePayment:
     def __init__(self) -> None:
         self._session = SimpleNamespace(cookies=FakeCookieJar({"payment-session": "cookie-1"}))
 
-    def _midtrans_post(self, path, _body, **_kwargs):
+    def _midtrans_post(self, path, _body, **kwargs):
         if path.endswith("/linking"):
+            assert kwargs["auth_snap"] == "Mid-client-key-p4"
             return {
                 "status": 201,
                 "body": {
@@ -42,12 +43,30 @@ class FakePayment:
                 "status": 200,
                 "body": {
                     "transaction_status": "pending",
+                    "gopay_verification_link_url": (
+                        "https://merchants-gws-app.gopayapi.com/payment?reference=charge-ref-1"
+                    ),
                     "actions": [{"url": "https://example.test/pay?reference=charge-ref-1"}],
                 },
             }
         raise AssertionError(path)
 
     def _midtrans_get(self, path):
+        if path == f"/snap/v1/transactions/{SNAP}":
+            return {
+                "status": 200,
+                "body": {
+                    "transaction_details": {
+                        "order_id": "setatt_p4_1",
+                        "gross_amount": "1",
+                        "currency": "IDR",
+                    },
+                    "merchant": {"client_key": "Mid-client-key-p4"},
+                    "accounts": {"gopay": {"account_status": "DISABLED"}},
+                    "transaction_status": "pending",
+                    "expiry_time": "2099-01-01T00:00:00+00:00",
+                },
+            }
         if path.endswith("/gopay"):
             return {"status": 200, "body": {"account_status": "ENABLED"}}
         if path.endswith("/status"):
@@ -55,7 +74,7 @@ class FakePayment:
                 "status": 200,
                 "body": {
                     "transaction_status": "settlement",
-                    "order_id": "order-p4-1",
+                    "order_id": "setatt_p4_1",
                     "gross_amount": "1",
                     "currency": "IDR",
                 },
@@ -84,14 +103,58 @@ class FakePayment:
 
 
 class FakeAdapter:
+    def normalize_payment_fingerprint(
+        self,
+        payment_fingerprint,
+        *,
+        phone,
+        local,
+        account_id,
+    ):
+        assert phone == "+628123456789"
+        assert local == "8123456789"
+        assert account_id
+        return payment_fingerprint
+
     def new_payment(self, *, proxy="", payment_fingerprint=None):
         assert proxy == ""
         assert payment_fingerprint == {"profile_id": "profile-p4"}
         return FakePayment()
 
+    def new_gojek_client(self, phone, *, proxy=""):
+        assert phone == "+628123456789"
+        assert proxy == ""
+        return FakeGojekClient()
+
+    def payment_warm_verification_page(self, _payment, _url):
+        return {"status": 200, "body": {}}
+
+    def payment_read_midtrans_transaction(self, payment, snap):
+        return payment._midtrans_get(f"/snap/v1/transactions/{snap}")
+
     def payment_pin_verify(self, _payment, _challenge_id, pin, *, purpose):
         assert pin == "147258"
         return f"pin-token-{purpose}"
+
+
+class FakeGojekClient:
+    def __init__(self) -> None:
+        self.auth = SimpleNamespace(
+            access_token="",
+            refresh_token="",
+            account_id="remote-account-p4",
+        )
+        self.user_uuid = "customer-p4"
+        self.uniqueid = "device-p4"
+        self.session_id = "session-p4"
+        self.device_token = "token-p4"
+
+    def refresh_token(self):
+        self.auth.access_token = "access-p4-refreshed"
+        return {"status": 200, "body": {}}
+
+    def get_balance(self):
+        return {"status": 200, "body": {"data": [{"balance": 100}]}}
 
 
 class FakeContext:
@@ -99,7 +162,9 @@ class FakeContext:
         self._checkpoint = checkpoint or {}
         self._input_value = input_value
         self.progress_values: list[float] = []
+        self.progress_messages: list[str] = []
         self.resources: list[tuple[str, str]] = []
+        self.heartbeat_count = 0
 
     def checkpoint(self):
         return dict(self._checkpoint)
@@ -110,8 +175,12 @@ class FakeContext:
     def acquire_resource(self, resource_type, resource_key, **_kwargs):
         self.resources.append((resource_type, resource_key))
 
-    def progress(self, value, _message=""):
+    def progress(self, value, message=""):
         self.progress_values.append(value)
+        self.progress_messages.append(message)
+
+    def heartbeat(self):
+        self.heartbeat_count += 1
 
     def consume_input(self, input_type):
         assert input_type == "otp"
@@ -151,7 +220,14 @@ def _seed_payment(database):
             AccountSecret(
                 account_id=account_id,
                 secret_payload_ciphertext=codec.encrypt(
-                    json.dumps({"pin": "147258", "proxy": ""}),
+                    json.dumps(
+                        {
+                            "pin": "147258",
+                            "proxy": "",
+                            "access_token": "access-p4",
+                            "refresh_token": "refresh-p4",
+                        }
+                    ),
                     context=f"account:{account_id}",
                 ),
                 updated_at=now,
@@ -185,6 +261,7 @@ def test_payment_resumes_after_manual_otp_and_verifies_remote_status(database):
         codec,
         FakeAdapter(),
         SmsSettingsStore(session_factory, codec),
+        sleep=lambda _seconds: None,
     )
     first_context = FakeContext()
     with pytest.raises(TaskWaitingInput) as waiting:
@@ -208,7 +285,7 @@ def test_payment_resumes_after_manual_otp_and_verifies_remote_status(database):
         assert intent is not None
         assert intent.status == "succeeded"
         assert intent.transaction_status == "settlement"
-        assert intent.order_id == "order-p4-1"
+        assert intent.order_id == "setatt_p4_1"
         assert intent.amount == 1
         state = json.loads(
             codec.decrypt(
@@ -217,3 +294,40 @@ def test_payment_resumes_after_manual_otp_and_verifies_remote_status(database):
             )
         )
         assert state["transaction_status"] == "settlement"
+
+
+def test_payment_upgrades_legacy_401_linking_checkpoint_before_retry(database):
+    session_factory, codec, account_id, payment_id = _seed_payment(database)
+    handler = PaymentExecutionHandler(
+        session_factory,
+        codec,
+        FakeAdapter(),
+        SmsSettingsStore(session_factory, codec),
+        sleep=lambda _seconds: None,
+    )
+    context = FakeContext(
+        {
+            "phase": "linking_pending",
+            "payment_id": payment_id,
+            "account_id": account_id,
+            "midtrans_url": MIDTRANS_URL,
+            "snap": SNAP,
+            "phone": "+628123456789",
+            "country_code": "62",
+            "local_phone": "8123456789",
+            "pin": "147258",
+            "proxy": "",
+            "payment_fingerprint": {},
+            "activation_id": "",
+            "activation_provider": "smsbower",
+            "consumed_code_hashes": [],
+            "cookies": {},
+        },
+        input_value="123456",
+    )
+
+    result = handler(context, {"payment_id": payment_id})
+
+    assert result["transaction_status"] == "settlement"
+    assert any("旧版 Midtrans 绑定鉴权检查点" in message for message in context.progress_messages)
+    assert context._checkpoint["midtrans_client_key"] == "Mid-client-key-p4"

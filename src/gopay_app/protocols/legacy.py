@@ -48,6 +48,51 @@ class LegacyProtocolAdapter:
         module = self._module("opai.core.gopay_payment_protocol")
         return module.GoPayPayment(proxy=proxy, payment_fingerprint=payment_fingerprint)
 
+    def normalize_payment_fingerprint(
+        self,
+        payment_fingerprint: dict[str, Any] | None,
+        *,
+        phone: str,
+        local: str,
+        account_id: str,
+    ) -> dict[str, Any]:
+        module = self._module("opai.core.payment_fingerprint")
+        return dict(
+            module.normalize_payment_fingerprint(
+                payment_fingerprint,
+                phone=phone,
+                local=local,
+                account_id=account_id,
+            )
+        )
+
+    @staticmethod
+    def payment_warm_verification_page(payment: Any, url: str) -> dict[str, Any]:
+        """访问支付 challenge 页面以建立与后续 GWA 请求一致的 Cookie 会话。"""
+        headers = payment._request_headers({"Referer": "https://app.midtrans.com/"})
+        response = payment._session.get(url, headers=headers, timeout_seconds=15)
+        return {
+            "status": int(getattr(response, "status_code", 0) or 0),
+            "body": {"content_length": len(str(getattr(response, "text", "") or ""))},
+        }
+
+    @staticmethod
+    def payment_read_midtrans_transaction(payment: Any, snap: str) -> dict[str, Any]:
+        """按旧支付编排的无签名请求读取 Midtrans 交易元数据。"""
+        response = payment._session.get(
+            f"https://app.midtrans.com/snap/v1/transactions/{snap}",
+            headers=payment._request_headers(),
+            timeout_seconds=30,
+        )
+        try:
+            body = response.json()
+        except Exception:
+            body = {"raw": str(getattr(response, "text", "") or "")[:500]}
+        return {
+            "status": int(getattr(response, "status_code", 0) or 0),
+            "body": body if isinstance(body, dict) else {},
+        }
+
     def payment_pin_verify(
         self,
         payment: Any,
