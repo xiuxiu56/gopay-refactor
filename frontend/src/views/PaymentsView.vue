@@ -282,11 +282,13 @@ watch(visibleRows, (value, previous) => {
           <label class="form-group payment-account-field"><span>GoPay 支付账号</span><DropdownSelect v-model="createForm.accountId" class="payment-account-select" :options="accountOptions" :visible-rows="5" aria-label="GoPay 支付账号" /></label>
           <label class="form-group payment-pin-field"><span>PIN 覆盖值</span><input v-model="createForm.pin" class="field" type="text" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="留空" /></label>
           <label class="form-group payment-proxy-field"><span>任务代理覆盖值</span><DropdownSelect v-model="createForm.proxyRegion" :options="proxyOptions" :visible-rows="5" aria-label="支付任务代理区域" /></label>
-          <label class="payment-confirm" title="已核对支付地址与账号信息"><input v-model="createForm.confirmed" type="checkbox" /><span>已核对支付地址与账号信息</span></label>
         </div>
-        <div class="payment-action-controls">
-          <span class="handler-state ready"><i />支付处理器已就绪</span>
-          <button class="icon-button task-control-button task-start-control payment-create-control" :disabled="busy === 'create'" title="创建并执行支付任务" aria-label="创建并执行支付任务"><LoaderCircle v-if="busy === 'create'" :size="16" class="spin" /><Send v-else :size="17" /></button>
+        <div class="payment-action-right">
+          <label class="payment-confirm" title="已核对支付地址与账号信息"><input v-model="createForm.confirmed" type="checkbox" /><span>已核对支付地址与账号信息</span></label>
+          <div class="payment-action-controls">
+            <span class="handler-state ready"><i />支付处理器已就绪</span>
+            <button class="icon-button task-control-button task-start-control payment-create-control" :disabled="busy === 'create'" title="创建并执行支付任务" aria-label="创建并执行支付任务"><LoaderCircle v-if="busy === 'create'" :size="16" class="spin" /><Send v-else :size="17" /></button>
+          </div>
         </div>
       </form>
     </section>
