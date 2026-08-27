@@ -25,6 +25,7 @@ class PaymentCreate(BaseModel):
     account_id: str | None = Field(default=None, max_length=36)
     pin: str = Field(default="", max_length=6)
     proxy: SecretStr | None = Field(default=None, max_length=600)
+    proxy_region: str = Field(default="", pattern=r"^(|[A-Za-z0-9]{2,12})$")
 
 
 def _payment_dict(payment: PaymentIntent) -> dict[str, object]:
@@ -120,6 +121,19 @@ def create_payment(request: Request, body: PaymentCreate, _admin=Depends(require
             detail={"code": "payment_pin_missing", "message": "支付账号缺少有效的 6 位 PIN"},
         )
     token_hash = hashlib.sha256(snap.encode()).hexdigest()
+    proxy = body.proxy.get_secret_value().strip() if body.proxy else ""
+    proxy_region = body.proxy_region.strip().upper()
+    if not proxy and proxy_region:
+        defaults = request.app.state.account_flow_defaults_store.get()
+        proxy = defaults.proxy_for(proxy_region, int(token_hash[:8], 16))
+        if not proxy:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "payment_proxy_region_missing",
+                    "message": f"区域 {proxy_region} 当前没有可用代理",
+                },
+            )
     now = utc_now()
     created = False
     with request.app.state.session_factory() as session, session.begin():
@@ -169,7 +183,7 @@ def create_payment(request: Request, body: PaymentCreate, _admin=Depends(require
         {
             "payment_id": payment_id,
             "pin": pin,
-            "proxy": body.proxy.get_secret_value().strip() if body.proxy else "",
+            "proxy": proxy,
         },
         max_attempts=3,
         idempotency_key=f"payment.execute:{token_hash}",

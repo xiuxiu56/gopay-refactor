@@ -25,6 +25,7 @@ import { formatDate, shortID } from '../utils.js'
 const loading = ref(true)
 const payments = ref([])
 const accounts = ref([])
+const proxyProfiles = ref([])
 const total = ref(0)
 const statusFilter = ref('')
 const detailOpen = ref(false)
@@ -35,7 +36,7 @@ const selectedTask = ref(null)
 const taskEvents = ref([])
 const otp = ref('')
 const busy = ref('')
-const createForm = reactive({ midtransUrl: '', accountId: '', pin: '', proxy: '', confirmed: true })
+const createForm = reactive({ midtransUrl: '', accountId: '', pin: '', proxyRegion: '', confirmed: true })
 const toast = useToast()
 const { viewportRef, viewportStyle, visibleRows, schedule: scheduleTable } = useAdaptiveTable({ initialRows: 5, minRows: 3 })
 let unsubscribe = () => {}
@@ -53,6 +54,18 @@ const accountOptions = computed(() => [
     value: account.id,
     label: account.phone,
     description: `${Number(account.balance || 0).toLocaleString('id-ID')} Rp · ${account.pin_setup_status === 'configured' ? 'PIN 已配置' : 'PIN 未配置'}`,
+  })),
+])
+const proxyOptions = computed(() => [
+  {
+    value: '',
+    label: '不使用代理',
+    description: '支付任务直接连接 GoPay',
+  },
+  ...proxyProfiles.value.map((profile) => ({
+    value: profile.region,
+    label: profile.label,
+    description: `${profile.region} · ${profile.count} 条代理 · ${profile.masked}`,
   })),
 ])
 const statusOptions = [
@@ -122,13 +135,15 @@ async function loadPaymentLog(payment, silent = false) {
 async function load(silent = false) {
   if (!silent) loading.value = true
   try {
-    const [paymentData, accountData] = await Promise.all([
+    const [paymentData, accountData, accountFlowSettings] = await Promise.all([
       api(`/api/v1/payments${queryString({ status: statusFilter.value, limit: visibleRows.value })}`),
       api('/api/v1/accounts?limit=200'),
+      api('/api/v1/settings/account-flow'),
     ])
     payments.value = paymentData.items || []
     total.value = paymentData.total || 0
     accounts.value = accountData.items || []
+    proxyProfiles.value = accountFlowSettings.proxy_profiles || []
   } catch (error) {
     toast.error(error.message)
   } finally {
@@ -160,12 +175,12 @@ async function createPayment() {
         midtrans_url: midtransUrl,
         account_id: createForm.accountId || null,
         pin: createForm.pin,
-        proxy: createForm.proxy.trim() || null,
+        proxy_region: createForm.proxyRegion,
       }),
     })
     createForm.midtransUrl = ''
     createForm.pin = ''
-    createForm.proxy = ''
+    createForm.proxyRegion = ''
     toast.success(data.created ? `支付任务已创建：${shortID(data.task?.id)}` : '该支付地址已经存在，已返回原任务')
     await load(true)
   } catch (error) {
@@ -266,12 +281,12 @@ watch(visibleRows, (value, previous) => {
           <label class="form-group payment-url-field"><span>Midtrans Snap 支付地址</span><div class="input-with-leading"><Link2 :size="14" /><input v-model.trim="createForm.midtransUrl" class="field" type="url" autocomplete="off" placeholder="粘贴完整 Snap 支付地址" required /></div></label>
           <label class="form-group payment-account-field"><span>GoPay 支付账号</span><DropdownSelect v-model="createForm.accountId" class="payment-account-select" :options="accountOptions" :visible-rows="5" aria-label="GoPay 支付账号" /></label>
           <label class="form-group payment-pin-field"><span>PIN 覆盖值</span><input v-model="createForm.pin" class="field" type="text" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="留空" /></label>
-          <label class="form-group payment-proxy-field"><span>任务代理覆盖值</span><input v-model="createForm.proxy" class="field" type="text" autocomplete="off" placeholder="留空" /></label>
+          <label class="form-group payment-proxy-field"><span>任务代理覆盖值</span><DropdownSelect v-model="createForm.proxyRegion" :options="proxyOptions" :visible-rows="5" aria-label="支付任务代理区域" /></label>
           <label class="payment-confirm" title="已核对支付地址与账号信息"><input v-model="createForm.confirmed" type="checkbox" /><span>已核对支付地址与账号信息</span></label>
         </div>
         <div class="payment-action-controls">
-          <button class="icon-button task-control-button task-start-control payment-create-control" :disabled="busy === 'create'" title="创建并执行支付任务" aria-label="创建并执行支付任务"><LoaderCircle v-if="busy === 'create'" :size="16" class="spin" /><Send v-else :size="17" /></button>
           <span class="handler-state ready"><i />支付处理器已就绪</span>
+          <button class="icon-button task-control-button task-start-control payment-create-control" :disabled="busy === 'create'" title="创建并执行支付任务" aria-label="创建并执行支付任务"><LoaderCircle v-if="busy === 'create'" :size="16" class="spin" /><Send v-else :size="17" /></button>
         </div>
       </form>
     </section>

@@ -27,35 +27,40 @@ def _setup(client: TestClient) -> dict[str, str]:
     return {"Origin": "http://testserver", "X-CSRF-Token": client.cookies.get(CSRF_COOKIE)}
 
 
+def _seed_account(client: TestClient) -> str:
+    account_id = str(uuid.uuid4())
+    now = utc_now()
+    with client.app.state.session_factory() as session, session.begin():
+        session.add(
+            Account(
+                id=account_id,
+                phone="+628123456789",
+                phone_normalized="628123456789",
+                local_phone="8123456789",
+                balance=100,
+                pin_setup_status="configured",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        session.add(
+            AccountSecret(
+                account_id=account_id,
+                secret_payload_ciphertext=client.app.state.secret_codec.encrypt(
+                    json.dumps({"pin": "147258"}),
+                    context=f"account:{account_id}",
+                ),
+                updated_at=now,
+            )
+        )
+    return account_id
+
+
 def test_payment_intent_and_encrypted_task_are_created(settings: Settings):
     with TestClient(create_app(settings)) as client:
         headers = _setup(client)
         client.app.state.worker_pool.stop()
-        account_id = str(uuid.uuid4())
-        now = utc_now()
-        with client.app.state.session_factory() as session, session.begin():
-            session.add(
-                Account(
-                    id=account_id,
-                    phone="+628123456789",
-                    phone_normalized="628123456789",
-                    local_phone="8123456789",
-                    balance=100,
-                    pin_setup_status="configured",
-                    created_at=now,
-                    updated_at=now,
-                )
-            )
-            session.add(
-                AccountSecret(
-                    account_id=account_id,
-                    secret_payload_ciphertext=client.app.state.secret_codec.encrypt(
-                        json.dumps({"pin": "147258"}),
-                        context=f"account:{account_id}",
-                    ),
-                    updated_at=now,
-                )
-            )
+        account_id = _seed_account(client)
 
         response = client.post(
             "/api/v1/payments",
@@ -108,3 +113,44 @@ def test_payment_intent_and_encrypted_task_are_created(settings: Settings):
                 select(Task).where(Task.task_type.in_(("payment.execute", "payment.reconcile")))
             ).all()
             assert payment_tasks == []
+
+
+def test_payment_proxy_region_resolves_encrypted_proxy_pool(settings: Settings):
+    proxy = "http://payment-region-ID-sid-one:payment-pass@proxy.example:8080"
+    with TestClient(create_app(settings)) as client:
+        headers = _setup(client)
+        client.app.state.worker_pool.stop()
+        account_id = _seed_account(client)
+        current = client.app.state.account_flow_defaults_store.get()
+        client.app.state.account_flow_defaults_store.save(
+            register_pin=None,
+            login_pin=None,
+            new_pin=None,
+            task_count=current.task_count,
+            concurrency=current.concurrency,
+            sms_otp_timeout_seconds=current.sms_otp_timeout_seconds,
+            manual_otp_timeout_seconds=current.manual_otp_timeout_seconds,
+            change_pin_enabled=current.change_pin_enabled,
+            default_proxy_region="ID",
+            proxy_pool=proxy,
+        )
+
+        response = client.post(
+            "/api/v1/payments",
+            json={
+                "midtrans_url": (
+                    "https://app.midtrans.com/snap/v4/redirection/"
+                    "66666666-2222-3333-4444-555555555555"
+                ),
+                "account_id": account_id,
+                "pin": "",
+                "proxy_region": "ID",
+            },
+            headers=headers,
+        )
+
+        assert response.status_code == 201
+        data = response.json()["data"]
+        execution = client.app.state.task_repository.get_execution(data["task"]["id"])
+        assert execution.payload["proxy"] == proxy
+        assert "payment-pass" not in response.text
