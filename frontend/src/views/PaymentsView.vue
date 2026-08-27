@@ -228,17 +228,19 @@ watch(visibleRows, (value, previous) => {
 <template>
   <div class="page payments-page">
     <section class="panel payment-workbench">
-      <header class="payment-workbench-heading"><div><span class="metric-icon amber"><CircleDollarSign :size="20" /></span><div><span class="eyebrow">MIDTRANS · GOPAY</span><h2>创建支付任务</h2><p>直接录入支付地址、账号与执行信息</p></div></div><span class="handler-state ready"><i />支付处理器已就绪</span></header>
-      <div class="payment-compose compact-payment-compose">
-        <form class="payment-inline-form compact-payment-form" @submit.prevent="createPayment">
-          <label class="form-group payment-url-field"><span>Midtrans Snap 支付地址</span><div class="input-with-leading"><Link2 :size="16" /><input v-model.trim="createForm.midtransUrl" class="field" type="url" autocomplete="off" placeholder="https://app.midtrans.com/snap/v4/redirection/…" required /></div><small>粘贴商户提供的完整 Snap 跳转地址</small></label>
+      <form class="payment-action-bar" @submit.prevent="createPayment">
+        <div class="payment-action-fields">
+          <label class="form-group payment-url-field"><span>Midtrans Snap 支付地址</span><div class="input-with-leading"><Link2 :size="14" /><input v-model.trim="createForm.midtransUrl" class="field" type="url" autocomplete="off" placeholder="粘贴完整 Snap 支付地址" required /></div></label>
           <label class="form-group payment-account-field"><span>GoPay 支付账号</span><DropdownSelect v-model="createForm.accountId" class="payment-account-select" :options="accountOptions" :visible-rows="5" aria-label="GoPay 支付账号" /></label>
-          <label class="form-group payment-pin-field"><span>PIN 覆盖值</span><input v-model="createForm.pin" class="field" type="text" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="留空使用账号已保存 PIN" /></label>
-          <label class="form-group payment-proxy-field"><span>任务代理覆盖值</span><input v-model="createForm.proxy" class="field" type="text" autocomplete="off" placeholder="留空使用账号已保存代理" /></label>
-          <label class="payment-confirm"><input v-model="createForm.confirmed" type="checkbox" /><span>已核对支付地址与账号信息</span></label>
-          <button class="primary-button payment-submit payment-submit-wide" :disabled="busy === 'create'"><LoaderCircle v-if="busy === 'create'" :size="16" class="spin" /><Send v-else :size="16" />创建并执行支付任务</button>
-        </form>
-      </div>
+          <label class="form-group payment-pin-field"><span>PIN 覆盖值</span><input v-model="createForm.pin" class="field" type="text" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="留空" /></label>
+          <label class="form-group payment-proxy-field"><span>任务代理覆盖值</span><input v-model="createForm.proxy" class="field" type="text" autocomplete="off" placeholder="留空" /></label>
+          <label class="payment-confirm" title="已核对支付地址与账号信息"><input v-model="createForm.confirmed" type="checkbox" /><span>已核对支付地址与账号信息</span></label>
+        </div>
+        <div class="payment-action-controls">
+          <button class="icon-button task-control-button task-start-control payment-create-control" :disabled="busy === 'create'" title="创建并执行支付任务" aria-label="创建并执行支付任务"><LoaderCircle v-if="busy === 'create'" :size="16" class="spin" /><Send v-else :size="17" /></button>
+          <span class="handler-state ready"><i />支付处理器已就绪</span>
+        </div>
+      </form>
     </section>
 
     <section class="panel table-panel payment-table-panel">
