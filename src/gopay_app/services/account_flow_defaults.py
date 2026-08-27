@@ -162,7 +162,7 @@ class AccountFlowDefaultsStore:
                 if (value := self._decode(rows.get(self._key(name))).strip())
             )
         try:
-            task_count = min(50, max(1, int(values["task_count"])))
+            task_count = min(1000, max(1, int(values["task_count"])))
         except ValueError:
             task_count = 1
         try:
@@ -235,7 +235,7 @@ class AccountFlowDefaultsStore:
             "register_pin": current.register_pin if register_pin is None else register_pin.strip(),
             "login_pin": current.login_pin if login_pin is None else login_pin.strip(),
             "new_pin": current.new_pin if new_pin is None else new_pin.strip(),
-            "task_count": str(min(50, max(1, task_count))),
+            "task_count": str(min(1000, max(1, task_count))),
             "concurrency": str(min(50, max(1, concurrency))),
             "sms_otp_timeout_seconds": str(
                 min(60, max(30, sms_otp_timeout_seconds))

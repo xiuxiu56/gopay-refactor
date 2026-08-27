@@ -115,6 +115,16 @@ async function saveAccountDefaults() {
     toast.warning('登录新 PIN 需要与原 PIN 不同')
     return
   }
+  const taskCount = Number(account.taskCount)
+  const concurrency = Number(account.concurrency)
+  if (!Number.isInteger(taskCount) || taskCount < 1 || taskCount > 1000) {
+    toast.warning('默认任务数量需要设置为 1 到 1000 的整数')
+    return
+  }
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 50) {
+    toast.warning('默认期望并发需要设置为 1 到 50 的整数')
+    return
+  }
   const smsOtpTimeout = Number(account.smsOtpTimeoutSeconds)
   const manualOtpTimeout = Number(account.manualOtpTimeoutSeconds)
   if (!Number.isInteger(smsOtpTimeout) || smsOtpTimeout < 30 || smsOtpTimeout > 60) {
@@ -300,8 +310,8 @@ onMounted(load)
           <label class="form-group"><span>注册设置 PIN</span><input v-model="account.registerPin" class="field" type="text" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="6 位 PIN" /></label>
           <label class="form-group"><span>登录原 PIN</span><input v-model="account.loginPin" class="field" type="text" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="6 位 PIN" /></label>
           <label class="form-group"><span>登录新 PIN</span><input v-model="account.newPin" class="field" type="text" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="新的 6 位 PIN" /></label>
-          <label class="form-group"><span>默认任务数量</span><input v-model.number="account.taskCount" class="field" type="number" min="1" max="50" /></label>
-          <label class="form-group"><span>默认期望并发</span><input v-model.number="account.concurrency" class="field" type="number" min="1" max="50" /></label>
+          <label class="form-group"><span>默认任务数量</span><input v-model="account.taskCount" class="field" type="text" inputmode="numeric" autocomplete="off" maxlength="4" pattern="[0-9]*" /></label>
+          <label class="form-group"><span>默认期望并发</span><input v-model="account.concurrency" class="field" type="text" inputmode="numeric" autocomplete="off" maxlength="2" pattern="[0-9]*" /></label>
           <label class="form-group"><span>自动取码超时（秒）</span><input v-model="account.smsOtpTimeoutSeconds" class="field" type="text" inputmode="numeric" autocomplete="off" maxlength="2" placeholder="60" /><small>只轮询一次，允许设置 30 到 60 秒；超时后释放 Worker 并等待手动 OTP。</small></label>
           <label class="form-group"><span>手动 OTP 等待超时（秒）</span><input v-model="account.manualOtpTimeoutSeconds" class="field" type="text" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="300" /></label>
           <label class="form-group"><span>默认代理区域</span><DropdownSelect v-model="account.defaultProxyRegion" :options="proxyRegionOptions" :visible-rows="5" aria-label="默认代理区域" /></label>

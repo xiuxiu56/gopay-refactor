@@ -47,7 +47,7 @@ class AccountFlowDefaultsUpdate(BaseModel):
     register_pin: SecretStr | None = Field(default=None, max_length=6)
     login_pin: SecretStr | None = Field(default=None, max_length=6)
     new_pin: SecretStr | None = Field(default=None, max_length=6)
-    task_count: int = Field(default=1, ge=1, le=50)
+    task_count: int = Field(default=1, ge=1, le=1000)
     concurrency: int = Field(default=2, ge=1, le=50)
     sms_otp_timeout_seconds: int = Field(default=60, ge=30, le=60)
     manual_otp_timeout_seconds: int = Field(default=300, ge=60, le=1800)

@@ -97,7 +97,7 @@ def test_account_flow_defaults_encrypt_proxy_profiles(settings: Settings):
                 "register_pin": "147258",
                 "login_pin": "147258",
                 "new_pin": "258369",
-                "task_count": 6,
+                "task_count": 1000,
                 "concurrency": 3,
                 "sms_otp_timeout_seconds": 60,
                 "manual_otp_timeout_seconds": 480,
@@ -110,7 +110,7 @@ def test_account_flow_defaults_encrypt_proxy_profiles(settings: Settings):
         )
         assert saved.status_code == 200
         data = saved.json()["data"]
-        assert data["task_count"] == 6
+        assert data["task_count"] == 1000
         assert data["concurrency"] == 3
         assert data["sms_otp_timeout_seconds"] == 60
         assert "sms_otp_attempts" not in data

@@ -27,7 +27,7 @@ class AccountFlowCreate(BaseModel):
     new_pin: SecretStr | None = Field(default=None, max_length=6)
     proxy: SecretStr | None = Field(default=None, max_length=600)
     proxy_region: str = Field(default="", pattern=r"^(|[A-Za-z0-9]{2,12})$")
-    count: int | None = Field(default=None, ge=1, le=50)
+    count: int | None = Field(default=None, ge=1, le=1000)
     concurrency: int | None = Field(default=None, ge=1, le=50)
 
     @field_validator("phone", mode="after")

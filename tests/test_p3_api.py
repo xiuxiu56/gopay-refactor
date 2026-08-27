@@ -152,3 +152,38 @@ def test_sms_settings_are_masked_and_account_batch_is_created(settings: Settings
         types = client.get("/api/v1/tasks/types").json()["data"]
         names = {item["task_type"] for item in types}
         assert {"account.register", "account.login"} <= names
+
+
+def test_account_flow_task_count_supports_1000(settings: Settings):
+    with TestClient(create_app(settings)) as client:
+        headers = _setup(client)
+        client.app.state.worker_pool.stop()
+        created = client.post(
+            "/api/v1/account-flows",
+            json={
+                "mode": "register",
+                "phone_source": "smsbower",
+                "pin": "147258",
+                "count": 1000,
+                "concurrency": 2,
+            },
+            headers=headers,
+        )
+        assert created.status_code == 201
+        data = created.json()["data"]
+        assert data["batch"]["total"] == 1000
+        assert data["batch"]["created"] == 2
+        assert len(data["tasks"]) == 2
+
+        too_many = client.post(
+            "/api/v1/account-flows",
+            json={
+                "mode": "register",
+                "phone_source": "smsbower",
+                "pin": "147258",
+                "count": 1001,
+                "concurrency": 2,
+            },
+            headers=headers,
+        )
+        assert too_many.status_code == 422

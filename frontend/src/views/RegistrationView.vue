@@ -192,8 +192,8 @@ async function submit() {
     toast.warning('新 PIN 必须是不同的 6 位数字')
     return
   }
-  if (!/^\d{1,2}$/.test(String(form.count)) || Number(form.count) < 1 || Number(form.count) > 50) {
-    toast.warning('任务数量必须是 1 到 50 的整数')
+  if (!/^\d{1,4}$/.test(String(form.count)) || Number(form.count) < 1 || Number(form.count) > 1000) {
+    toast.warning('任务数量必须是 1 到 1000 的整数')
     return
   }
   if (!/^\d{1,2}$/.test(String(form.concurrency)) || Number(form.concurrency) < 1 || Number(form.concurrency) > 50) {
@@ -349,7 +349,7 @@ watch(() => form.mode, applyModeDefaults)
           <label class="command-control command-source"><span>号码来源</span><DropdownSelect v-model="form.phoneSource" :options="sourceOptions" aria-label="号码来源" /></label>
           <label class="command-control command-pin"><span>{{ form.mode === 'login' ? '原 PIN' : '设置 PIN' }}</span><input v-model="form.pin" class="field" name="pin" type="text" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="6 位 PIN" /></label>
           <label class="command-control command-pin"><span>新 PIN</span><input v-model="form.newPin" class="field" name="new-pin" type="text" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="新的 6 位 PIN" :disabled="form.mode !== 'login' || !form.changePin" /></label>
-          <label class="command-control command-count"><span>任务数量</span><input v-model="form.count" class="field" type="text" inputmode="numeric" autocomplete="off" maxlength="2" pattern="[0-9]*" /></label>
+          <label class="command-control command-count"><span>任务数量</span><input v-model="form.count" class="field" type="text" inputmode="numeric" autocomplete="off" maxlength="4" pattern="[0-9]*" /></label>
           <label class="command-control command-count"><span>期望并发</span><input v-model="form.concurrency" class="field" type="text" inputmode="numeric" autocomplete="off" maxlength="2" pattern="[0-9]*" /></label>
           <label class="command-toggle pin-toggle" :class="{ disabled: form.mode !== 'login' }"><input v-model="form.changePin" type="checkbox" :disabled="form.mode !== 'login'" /><span>登录后修改 PIN</span></label>
           <label class="command-control command-proxy"><span>任务代理</span><DropdownSelect v-model="form.proxyRegion" :options="proxyOptions" :visible-rows="5" :disabled="!proxyProfiles.length" aria-label="任务代理区域" /></label>
