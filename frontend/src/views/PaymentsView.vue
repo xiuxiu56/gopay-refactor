@@ -2,9 +2,11 @@
 import {
   CircleAlert,
   CircleDollarSign,
+  FileClock,
   KeyRound,
   Link2,
   LoaderCircle,
+  MessageSquareText,
   RefreshCw,
   RotateCcw,
   Send,
@@ -25,9 +27,12 @@ const payments = ref([])
 const accounts = ref([])
 const total = ref(0)
 const statusFilter = ref('')
+const detailOpen = ref(false)
 const inputOpen = ref(false)
 const clearOpen = ref(false)
 const selectedPayment = ref(null)
+const selectedTask = ref(null)
+const taskEvents = ref([])
 const otp = ref('')
 const busy = ref('')
 const createForm = reactive({ midtransUrl: '', accountId: '', pin: '', proxy: '', confirmed: true })
@@ -89,6 +94,29 @@ function transactionLabel(status) {
 
 function canReconcile(payment) {
   return !['queued', 'running', 'waiting_otp', 'retry_wait'].includes(payment.status)
+}
+
+function eventLevelLabel(level) {
+  return ({ error: '错误', warning: '警告', info: '信息' })[level] || '信息'
+}
+
+async function loadPaymentLog(payment, silent = false) {
+  if (!payment?.task_id) {
+    if (!silent) toast.warning('当前支付记录尚未关联任务日志')
+    return
+  }
+  if (!silent) busy.value = `detail-${payment.id}`
+  try {
+    const data = await api(`/api/v1/tasks/${payment.task_id}?event_limit=500`)
+    selectedPayment.value = payment
+    selectedTask.value = data.task
+    taskEvents.value = data.events || []
+    detailOpen.value = true
+  } catch (error) {
+    if (!silent) toast.error(error.message)
+  } finally {
+    if (!silent) busy.value = ''
+  }
 }
 
 async function load(silent = false) {
@@ -210,7 +238,12 @@ onMounted(() => {
   load()
   unsubscribe = subscribeRealtime(['payment', 'task'], () => {
     window.clearTimeout(refreshTimer)
-    refreshTimer = window.setTimeout(() => load(true), 120)
+    refreshTimer = window.setTimeout(async () => {
+      await load(true)
+      if (detailOpen.value && selectedPayment.value?.task_id) {
+        await loadPaymentLog(selectedPayment.value, true)
+      }
+    }, 120)
   })
 })
 
@@ -247,9 +280,17 @@ watch(visibleRows, (value, previous) => {
       <header class="command-bar"><div class="filter-group"><DropdownSelect v-model="statusFilter" class="filter-dropdown payment-status-select" :options="statusOptions" :visible-rows="5" aria-label="支付状态" @change="load()" /><span class="result-count">显示 {{ payments.length }} 条，共 {{ total }} 条支付记录</span></div><div class="command-actions"><button class="icon-button" title="刷新支付状态" aria-label="刷新支付状态" @click="load()"><RefreshCw :size="16" /></button><button type="button" class="icon-button danger-hover" title="停止任务并清空全部支付日志" aria-label="停止任务并清空全部支付日志" @click="clearOpen = true"><Trash2 :size="16" /></button></div></header>
       <div v-if="loading" class="table-loading"><LoaderCircle :size="22" class="spin" />正在读取支付状态</div>
       <div v-else ref="viewportRef" class="table-scroll adaptive-table" :class="{ 'is-empty': !payments.length }" :style="viewportStyle">
-        <table class="data-table payment-table"><thead><tr><th>支付 ID</th><th>订单号</th><th>支付账号</th><th>金额</th><th>任务状态</th><th>远端状态</th><th>详情</th><th>更新时间</th><th>操作</th></tr></thead><tbody><tr v-for="payment in payments" :key="payment.id"><td><code :title="payment.id">{{ shortID(payment.id, 10) }}</code></td><td><strong :title="payment.order_id">{{ payment.order_id || '待获取' }}</strong></td><td class="message-cell" :title="accountLabel(payment.account_id)">{{ accountLabel(payment.account_id) }}</td><td><b class="balance">{{ amountLabel(payment) }}</b></td><td><StatusBadge :status="payment.status" /></td><td>{{ transactionLabel(payment.transaction_status) }}</td><td class="message-cell" :title="payment.last_error_message">{{ payment.last_error_message || '状态正常' }}</td><td>{{ formatDate(payment.updated_at) }}</td><td><div class="row-actions"><button v-if="payment.status === 'waiting_otp'" class="icon-button small warning" title="提交支付 OTP" @click="openInput(payment)"><KeyRound :size="15" /></button><button v-if="canReconcile(payment)" class="icon-button small" title="读取远端状态进行复核" :disabled="busy === `reconcile-${payment.id}`" @click="reconcilePayment(payment)"><LoaderCircle v-if="busy === `reconcile-${payment.id}`" :size="15" class="spin" /><RotateCcw v-else :size="15" /></button></div></td></tr><tr v-if="!payments.length" class="adaptive-empty-row"><td colspan="9"><div class="table-empty"><CircleDollarSign :size="28" /><strong>暂无支付记录</strong><small>在上方录入 Midtrans Snap 支付地址即可创建任务。</small></div></td></tr></tbody></table>
+        <table class="data-table payment-table"><thead><tr><th>支付 ID</th><th>订单号</th><th>支付账号</th><th>金额</th><th>任务状态</th><th>远端状态</th><th>详情</th><th>更新时间</th><th>操作</th></tr></thead><tbody><tr v-for="payment in payments" :key="payment.id"><td><code :title="payment.id">{{ shortID(payment.id, 10) }}</code></td><td><strong :title="payment.order_id">{{ payment.order_id || '待获取' }}</strong></td><td class="message-cell" :title="accountLabel(payment.account_id)">{{ accountLabel(payment.account_id) }}</td><td><b class="balance">{{ amountLabel(payment) }}</b></td><td><StatusBadge :status="payment.status" /></td><td>{{ transactionLabel(payment.transaction_status) }}</td><td class="message-cell" :title="payment.last_error_message">{{ payment.last_error_message || '状态正常' }}</td><td>{{ formatDate(payment.updated_at) }}</td><td><div class="row-actions"><button class="icon-button small" :disabled="!payment.task_id || busy === `detail-${payment.id}`" :title="payment.task_id ? '查看支付任务日志详情' : '当前支付记录尚未关联任务日志'" :aria-label="payment.task_id ? '查看支付任务日志详情' : '当前支付记录尚未关联任务日志'" @click="loadPaymentLog(payment)"><LoaderCircle v-if="busy === `detail-${payment.id}`" :size="15" class="spin" /><MessageSquareText v-else :size="15" /></button><button v-if="payment.status === 'waiting_otp'" class="icon-button small warning" title="提交支付 OTP" @click="openInput(payment)"><KeyRound :size="15" /></button><button v-if="canReconcile(payment)" class="icon-button small" title="读取远端状态进行复核" :disabled="busy === `reconcile-${payment.id}`" @click="reconcilePayment(payment)"><LoaderCircle v-if="busy === `reconcile-${payment.id}`" :size="15" class="spin" /><RotateCcw v-else :size="15" /></button></div></td></tr><tr v-if="!payments.length" class="adaptive-empty-row"><td colspan="9"><div class="table-empty"><CircleDollarSign :size="28" /><strong>暂无支付记录</strong><small>在上方录入 Midtrans Snap 支付地址即可创建任务。</small></div></td></tr></tbody></table>
       </div>
     </section>
+
+    <div v-if="detailOpen" class="dialog-backdrop" @click.self="detailOpen = false">
+      <section class="dialog panel task-log-dialog">
+        <header><div><h2>支付任务日志详情</h2><p>{{ selectedPayment?.order_id || '等待获取订单号' }} · {{ shortID(selectedPayment?.id, 10) }}</p></div><button type="button" class="icon-button" title="关闭支付日志详情" @click="detailOpen = false"><X :size="17" /></button></header>
+        <div class="task-detail-summary"><div><span>支付 ID</span><code :title="selectedPayment?.id">{{ shortID(selectedPayment?.id, 10) }}</code></div><div><span>任务状态</span><StatusBadge :status="selectedTask?.status || selectedPayment?.status" /></div><div><span>执行进度</span><strong>{{ Math.round((selectedTask?.progress || 0) * 100) }}%</strong></div><div><span>更新时间</span><strong>{{ formatDate(selectedTask?.updated_at || selectedPayment?.updated_at) }}</strong></div></div>
+        <div class="event-list"><div v-if="busy.startsWith('detail-')" class="dialog-loading"><LoaderCircle :size="20" class="spin" />正在读取支付任务日志</div><article v-for="event in taskEvents" :key="event.sequence"><span class="event-sequence">{{ event.sequence }}</span><div><header><strong>{{ event.message || '支付任务状态已更新' }}</strong><time>{{ formatDate(event.created_at) }}</time></header><p>{{ event.event_type }} · {{ eventLevelLabel(event.level) }}</p></div></article><div v-if="!busy.startsWith('detail-') && !taskEvents.length" class="empty-events"><FileClock :size="24" /><span>这项支付任务还没有阶段日志</span></div></div>
+      </section>
+    </div>
 
     <div v-if="inputOpen" class="dialog-backdrop" @click.self="inputOpen = false"><form class="dialog panel input-dialog" @submit.prevent="submitInput"><header><div><h2>提交支付 OTP</h2><p>支付任务 {{ shortID(selectedPayment?.task_id) }} 会从加密检查点继续。</p></div><button type="button" class="icon-button" title="关闭支付 OTP 窗口" @click="inputOpen = false"><X :size="17" /></button></header><div class="dialog-body"><label class="form-group"><span>OTP 验证码</span><input v-model.trim="otp" class="field" type="text" inputmode="numeric" autocomplete="one-time-code" minlength="4" maxlength="8" autofocus required /></label></div><footer><button type="button" class="secondary-button" @click="inputOpen = false">取消</button><button class="primary-button" :disabled="busy === 'input'"><LoaderCircle v-if="busy === 'input'" :size="16" class="spin" /><KeyRound v-else :size="16" />加密提交</button></footer></form></div>
 
